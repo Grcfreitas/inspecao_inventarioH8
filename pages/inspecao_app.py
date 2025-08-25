@@ -201,4 +201,4 @@ with col2:
                     else:
                         st.error("Ocorreu um erro ao tentar salvar. Item não encontrado.")
     else:
-        st.info("Busque ou identifique um item para atualizar.")
+        st.info("Busque e identifique um item para atualizar.")
