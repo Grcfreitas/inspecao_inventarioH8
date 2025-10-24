@@ -36,16 +36,19 @@ with st.sidebar:
 st.title('📦 Sistema de Inspeção por Câmera com IA')
 st.write("Aponte a câmera, identifique o produto e use a IA para registrar seu estado.")
 
-# --- Nomes dos Arquivos e Colunas ---
+# --- Nomes dos Arquivos e Colunas (Seu original) ---
 NOME_ARQUIVO_DADOS = 'Inventario-H8 - itens.csv'
 COLUNAS = ['BMP', 'Itens', 'apartamento', 'situacao', 'data_atualizacao', 'ultimo_comentario']
 
 # --- Funções ---
+
+# ↓↓↓ CORREÇÃO APLICADA AQUI ↓↓↓
 def preprocess_image_for_ocr(image):
-    """Converte a imagem para preto e branco (binarização) para melhorar a precisão do OCR."""
+    """Converte a imagem para escala de cinza, que o Tesseract (OEM 3) processa bem."""
     grayscale_image = image.convert('L')
-    threshold_image = grayscale_image.point(lambda x: 0 if x < 128 else 255, '1')
-    return threshold_image
+    # Remoção da binarização manual (threshold). 
+    # Deixar o Tesseract lidar com a escala de cinza é melhor para superfícies reflexivas.
+    return grayscale_image
 
 def carregar_dados():
     if os.path.exists(NOME_ARQUIVO_DADOS):
@@ -63,7 +66,6 @@ def salvar_dados(df):
 def analisar_imagem_com_gemini(api_key, imagem, prompt):
     try:
         genai.configure(api_key=api_key)
-        # CORREÇÃO: Atualizado o nome do modelo para a versão estável mais recente
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content([prompt, imagem])
         return response.text
@@ -95,7 +97,11 @@ with col1:
         with st.spinner('Lendo texto da etiqueta...'):
             try:
                 preprocessed_image = preprocess_image_for_ocr(image)
-                custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789'
+                
+                # ↓↓↓ CORREÇÃO APLICADA AQUI ↓↓↓
+                # ATUALIZAÇÃO: Mudando de psm 6 para 11 (Sparse text) para melhor detecção
+                custom_config = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789'
+                
                 texto_extraido = pytesseract.image_to_string(preprocessed_image, config=custom_config)
                 match = re.search(r'\d+', texto_extraido)
                 st.session_state.numero_lido_ocr = match.group(0) if match else ""
@@ -108,7 +114,6 @@ with col1:
         buscar_produto_btn = st.form_submit_button("🔎 Buscar Item")
 
         if buscar_produto_btn:
-            # CORREÇÃO: Reseta o estado apenas quando uma nova busca é iniciada
             st.session_state.produto_encontrado = None
             st.session_state.item_nao_encontrado_id = None
             st.session_state.ai_comment = ""
@@ -158,17 +163,14 @@ with col2:
             picture_item = st.camera_input("Aponte para o ITEM e tire a foto", key="analysis_camera")
 
             if picture_item:
-                # CORREÇÃO: Verifica a chave da API ANTES de tentar analisar
                 if 'gemini_api_key' not in st.session_state or not st.session_state.gemini_api_key:
                     st.error("AVISO: Chave da API do Gemini não inserida. Por favor, insira a chave na barra lateral para continuar.")
                 else:
-                    # Se a chave existe, prossegue com a análise
                     with st.spinner("A IA está analisando a imagem do item..."):
                         img_para_analise = Image.open(picture_item)
                         prompt = "Descreva o estado de conservação do objeto principal nesta imagem. Foque em detalhes como arranhões, amassados, manchas, rasgos ou qualquer outro defeito visível. Se o objeto parecer estar em bom estado, mencione isso também."
                         st.session_state.ai_comment = analisar_imagem_com_gemini(st.session_state.gemini_api_key, img_para_analise, prompt)
                     
-                    # Avança para o modo manual APÓS a análise bem-sucedida
                     st.session_state.inspection_mode = 'manual'
                     st.rerun()
 
@@ -194,6 +196,7 @@ with col2:
                         df.loc[index, 'data_atualizacao'] = data_atual
                         salvar_dados(df)
                         st.success(f"Item {produto['BMP']} atualizado com sucesso!")
+                        
                         st.session_state.produto_encontrado = None
                         st.session_state.ai_comment = ""
                         st.session_state.inspection_mode = None
